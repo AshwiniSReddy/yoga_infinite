@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Infinite Grid — Variable Tile Sizes</title>
+
+<style>
+  :root{
+    --tile-w: 400px;
+    --tile-h: 250px;
+    --gap-x: 40px;
+    --gap-y: 40px;
+    --inner: 8px;
+    --radius: 8px;
+  }
+
+  html,body{height:100%;margin:0}
+
+  #viewport{
+    position:relative;
+    overflow:hidden;
+    width:100vw;
+    height:100vh;
+    background:#fff;
+    touch-action:none;
+  }
+
+  #layer{
+    position:absolute;
+    inset:0;
+    transform-origin:0 0;
+    will-change:transform;
+  }
+
+  .tile{
+    position:absolute;
+    width:var(--tile-w);
+    height:var(--tile-h);
+    background:url('background.png') center/cover no-repeat;
+    contain:paint;
+    will-change:transform;
+    backface-visibility:hidden;
+    outline:1px solid transparent;
+    cursor:pointer;
+    transform-origin:center center;
+  }
+
+  .tile::after{
+    content:"";
+    position:absolute;
+    inset:var(--inner);
+    border-radius:var(--radius);
+    background:var(--img) center/cover no-repeat;
+    opacity:0;
+    transition:opacity .12s linear;
+  }
+
+  .tile.ready::after{ opacity:1; }
+
+  /* ---------- Modal ---------- */
+
+  .modal-backdrop{
+    position:fixed;
+    inset:0;
+    display:none;
+    place-items:center;
+    background:rgba(0,0,0,.55);
+    z-index:9999;
+  }
+
+  .modal-backdrop.open{ display:grid; }
+
+  .modal{
+    width:min(92vw,900px);
+    background:#111;
+    color:#eee;
+    border-radius:16px;
+    overflow:hidden;
+    display:grid;
+    grid-template-rows:auto auto 1fr;
+  }
+
+  .modal header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:14px 16px;
+    background:#181818;
+  }
+
+  .modal header h2{
+    margin:0;
+    font:700 18px system-ui;
+  }
+
+  .modal .meta{
+    padding:10px 16px 0;
+    font-size:13px;
+    color:#aaa;
+  }
+
+  .modal article{
+    padding:10px 16px 18px;
+    font-size:15px;
+    line-height:1.6;
+  }
+
+  .closeBtn{
+    background:#2a2a2a;
+    color:#fff;
+    border:0;
+    border-radius:8px;
+    padding:6px 12px;
+    cursor:pointer;
+    font-weight:700;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="viewport"><div id="layer"></div></div>
+
+<div id="backdrop" class="modal-backdrop">
+  <div class="modal">
+    <header>
+      <h2 id="dlgTitle"></h2>
+      <button class="closeBtn" id="closeBtn">Close</button>
+    </header>
+    <div class="meta" id="dlgMeta"></div>
+    <article id="dlgBody"></article>
+  </div>
+</div>
+
+<script type="module">
+/* ---------------- Config ---------------- */
+const TILE_W = 400, TILE_H = 250;
+const GAP_X  = 40,  GAP_Y = 40;
+const STEP_X = TILE_W + GAP_X;
+const STEP_Y = TILE_H + GAP_Y;
+
+const EXTRA = 4;
+const FRICTION = 0.92;
+const IMPULSE  = 0.6;
+const MAX_V = 40;
+const ZMIN = 0.33, ZMAX = 3.0;
+
+/* ---------------- Size Variants ---------------- */
+const SIZE_VARIANTS = [
+  { w: 1.0, h: 1.0 },
+  { w: 0.85, h: 0.85 },
+  { w: 1.15, h: 1.15 },
+  { w: 1.0, h: 0.75 },
+  { w: 0.75, h: 1.0 },
+];
+
+/* ---------------- Assets ---------------- */
+const IMAGES = [
+  '1.png','2.png','3.png','4.png','5.png','6.png','7.png','8.png','9.png',
+  '10.png','11.png','12.png','13.png','14.png','15.png','16.png','17.png','18.png',
+  '19.png','20.png','21.png','22.png','23.png','24.png','25.png','26.png','27.png'
+];
+
+const CONTENT = [
+  { title:'Racer at Dawn', meta:'1914', body:'Early morning practice on wooden tracks.' },
+  { title:'Factory Line', meta:'1920s', body:'Hand-fit parts met conveyor belts.' },
+  { title:'Sidecar Stories', meta:'1930s', body:'Touring meant maps and spare tubes.' },
+  { title:'Flathead Notes', meta:'Engineering', body:'Timing, jetting, weather logs.' },
+  { title:'Club Night', meta:'1950s', body:'Friday meets and weekend wrenching.' },
+  { title:'Custom Chromes', meta:'Craft', body:'Mirror finishes hid hours of prep.' },
+];
+
+/* ---------------- Elements ---------------- */
+const vp = document.getElementById('viewport');
+const layer = document.getElementById('layer');
+const backdrop = document.getElementById('backdrop');
+const dlgTitle = document.getElementById('dlgTitle');
+const dlgMeta  = document.getElementById('dlgMeta');
+const dlgBody  = document.getElementById('dlgBody');
+const closeBtn = document.getElementById('closeBtn');
+
+/* ---------------- Helpers ---------------- */
+const wrap = (n, size) => ((n % size) + size) % size;
+const mod  = (n, m) => ((n % m) + m) % m;
+const DPR = window.devicePixelRatio || 1;
+
+function quantize(value, zoom){
+  const s = value * zoom;
+  return Math.round(s * DPR) / DPR / zoom;
+}
+
+const STRIDE = 17;
+
+function imageForCell(wc, wr){
+  return IMAGES[mod(wc + wr * STRIDE, IMAGES.length)];
+}
+
+function contentIndexForCell(wc, wr){
+  return mod(wc + wr * STRIDE, CONTENT.length);
+}
+
+function sizeForCell(wc, wr){
+  return SIZE_VARIANTS[mod(wc * 31 + wr * 17, SIZE_VARIANTS.length)];
+}
+
+/* ---------------- Grid ---------------- */
+const cols = Math.ceil(innerWidth / STEP_X) + EXTRA;
+const rows = Math.ceil(innerHeight / STEP_Y) + EXTRA;
+const tiles = [];
+
+for(let r=0;r<rows;r++){
+  for(let c=0;c<cols;c++){
+    const el = document.createElement('div');
+    el.className = 'tile ready';
+    layer.appendChild(el);
+    tiles.push({ el, wc:NaN, wr:NaN });
+  }
+}
+
+/* ---------------- Camera ---------------- */
+const camera = { x:0, y:0, zoom:1 };
+let vx=0, vy=0, dragging=false, lastX=0, lastY=0;
+let pressTile=null, pressX=0, pressY=0;
+
+/* ---------------- Render ---------------- */
+function render(){
+  const ox = wrap(-camera.x, STEP_X);
+  const oy = wrap(-camera.y, STEP_Y);
+  const col0 = Math.floor(camera.x / STEP_X);
+  const row0 = Math.floor(camera.y / STEP_Y);
+
+  let i=0;
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++,i++){
+      const wc = (c-1)+col0;
+      const wr = (r-1)+row0;
+      const tile = tiles[i];
+
+      if(tile.wc!==wc || tile.wr!==wr){
+        tile.wc = wc;
+        tile.wr = wr;
+        tile.el.style.setProperty('--img',`url("${imageForCell(wc,wr)}")`);
+        tile.el.dataset.idx = contentIndexForCell(wc,wr);
+      }
+
+      const size = sizeForCell(wc,wr);
+      const x = quantize(c*STEP_X+ox-STEP_X,camera.zoom);
+      const y = quantize(r*STEP_Y+oy-STEP_Y,camera.zoom);
+
+      tile.el.style.transform =
+        `translate3d(${x}px,${y}px,0) scale(${size.w},${size.h})`;
+    }
+  }
+  layer.style.transform = `scale(${camera.zoom})`;
+}
+
+/* ---------------- Loop ---------------- */
+function tick(){
+  if(!dragging){
+    camera.x += vx;
+    camera.y += vy;
+    vx *= FRICTION;
+    vy *= FRICTION;
+  }
+  render();
+  requestAnimationFrame(tick);
+}
+tick();
+
+/* ---------------- Interaction ---------------- */
+vp.addEventListener('wheel',e=>{
+  e.preventDefault();
+  if(e.ctrlKey){
+    const px = e.clientX/camera.zoom + camera.x;
+    const py = e.clientY/camera.zoom + camera.y;
+    camera.zoom = Math.min(ZMAX,Math.max(ZMIN,camera.zoom*Math.exp(-e.deltaY*0.001)));
+    camera.x = px - e.clientX/camera.zoom;
+    camera.y = py - e.clientY/camera.zoom;
+  } else {
+    vx += e.deltaX * IMPULSE;
+    vy += e.deltaY * IMPULSE;
+  }
+},{passive:false});
+
+vp.addEventListener('pointerdown',e=>{
+  dragging=true;
+  lastX=pressX=e.clientX;
+  lastY=pressY=e.clientY;
+  vx=vy=0;
+  pressTile=e.target.closest('.tile');
+});
+
+vp.addEventListener('pointermove',e=>{
+  if(!dragging) return;
+  camera.x -= (e.clientX-lastX)/camera.zoom;
+  camera.y -= (e.clientY-lastY)/camera.zoom;
+  lastX=e.clientX;
+  lastY=e.clientY;
+});
+
+vp.addEventListener('pointerup',e=>{
+  dragging=false;
+  if(pressTile && Math.hypot(e.clientX-pressX,e.clientY-pressY)<8){
+    const item = CONTENT[pressTile.dataset.idx];
+    dlgTitle.textContent=item.title;
+    dlgMeta.textContent=item.meta;
+    dlgBody.textContent=item.body;
+    backdrop.classList.add('open');
+  }
+  pressTile=null;
+});
+
+closeBtn.onclick=()=>backdrop.classList.remove('open');
+backdrop.onclick=e=>{
+  if(!e.target.closest('.modal')) backdrop.classList.remove('open');
+};
+
+addEventListener('resize',()=>location.reload());
+</script>
+</body>
+</html>

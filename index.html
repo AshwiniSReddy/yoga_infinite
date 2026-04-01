@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Infinite Grid — stable images, even gaps (modal text)</title>
+    <style>
+      :root {
+        --tile-w: 400px; /* image card size (not including gap) */
+        --tile-h: 250px;
+        --gap-x: 70px; /* visible gutter */
+        --gap-y: 70px;
+        --inner: 8px; /* inset so borders in the art don't touch the gutter */
+        --radius: 8px;
+      }
+
+      /* .image-modal {
+        width: min(92vw, 1000px);
+        background: #111;
+        color: #f2f2f2;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      } */
+      /* .image-modal {
+        width: 96vw;
+        height: 94vh;
+        max-width: 1800px;
+        max-height: 94vh;
+        background: #111;
+        color: #f2f2f2;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      } */
+
+      .modal.image-modal {
+        width: 96vw;
+        height: 92vh;
+        max-width: 1800px;
+        max-height: 92vh;
+        background: #111;
+        color: #f2f2f2;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+        display: grid;
+        grid-template-rows: 56px 1fr;
+      }
+      .imageWrap {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+        padding: 12px;
+        background: #0a0a0a;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      .imageWrap img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        object-position: center;
+        border-radius: 12px;
+        box-shadow: 0 0 18px rgba(128, 128, 128, 0.35);
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      #viewport {
+        position: relative;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+        background: #000000;
+        touch-action: none;
+      }
+      #layer {
+        position: absolute;
+        inset: 0;
+        transform-origin: 0 0;
+        will-change: transform;
+      }
+
+      /* parchment tile */
+      .tile {
+        position: absolute;
+        width: var(--tile-w);
+        height: var(--tile-h);
+        background: url("background.png") center/cover no-repeat;
+        contain: paint;
+        will-change: transform;
+        backface-visibility: hidden;
+        outline: 1px solid transparent; /* compositor quirk guard */
+        cursor: pointer;
+        box-shadow: 0 0 18px rgba(194, 192, 192, 0.55);
+      }
+
+      /* photo overlay (thumbnail only for tiles) */
+      .tile::after {
+        content: "";
+        position: absolute;
+        inset: var(--inner);
+        border-radius: var(--radius);
+        background: var(--img) center/cover no-repeat;
+        opacity: 0;
+        transition: opacity 0.12s linear;
+        will-change: opacity;
+        transform: translateZ(0);
+      }
+      .tile.ready::after {
+        opacity: 1;
+      }
+
+      /* ---------- Custom Modal (no <dialog>) ---------- */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        display: none; /* toggled to grid when open */
+        place-items: center;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(1px);
+        z-index: 9999;
+      }
+      .modal-backdrop.open {
+        display: grid;
+      }
+
+      .modal header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        background: linear-gradient(180deg, #191919, #141414);
+        border-bottom: 1px solid #232323;
+      }
+      .modal header h2 {
+        margin: 0;
+        font:
+          700 18px/1.2 system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial;
+        letter-spacing: 0.2px;
+      }
+      .modal .meta {
+        padding: 10px 16px 0 16px;
+        font:
+          13px/1.4 system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial;
+        color: #bdbdbd;
+      }
+      .modal article {
+        padding: 10px 16px 18px 16px;
+        font:
+          15px/1.6 system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial;
+        color: #e8e8e8;
+      }
+      .closeBtn {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        padding: 8px 12px;
+        background: #2a2a2a;
+        color: #eee;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .closeBtn:hover {
+        background: #3a3a3a;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="viewport"><div id="layer"></div></div>
+
+    <!-- Custom modal (works everywhere) -->
+    <!-- <div id="backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" aria-describedby="dlgBody">
+  <div class="modal">
+    <header>
+      <h2 id="dlgTitle">Title</h2>
+      <button class="closeBtn" id="closeBtn" type="button" aria-label="Close">Close</button>
+    </header>
+    <div class="meta" id="dlgMeta">—</div>
+    <article id="dlgBody">—</article>
+  </div>
+</div> -->
+    <div
+      id="backdrop"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dlgTitle"
+    >
+      <div class="modal image-modal">
+        <header>
+          <h2 id="dlgTitle"></h2>
+          <button
+            class="closeBtn"
+            id="closeBtn"
+            type="button"
+            aria-label="Close"
+          >
+            Close
+          </button>
+        </header>
+        <div class="imageWrap">
+          <img id="dlgImage" src="" alt="Preview image" />
+        </div>
+      </div>
+    </div>
+    <script type="module">
+      /* ---------------- Config ---------------- */
+      const TILE_W = 400,
+        TILE_H = 250;
+      const GAP_X = 70,
+        GAP_Y = 70;
+      const STEP_X = TILE_W + GAP_X;
+      const STEP_Y = TILE_H + GAP_Y;
+
+      const EXTRA = 4; // off-screen ring
+      const FRICTION = 0.92;
+      const IMPULSE = 0.6;
+      const MAX_V = 40;
+      const ZMIN = 0.33,
+        ZMAX = 3.0;
+
+      /* Thumbnails for tiles */
+      const IMAGES = [
+        "1.png",
+        "2.png",
+        "3.png",
+        "4.png",
+        "5.png",
+        "6.png",
+        "7.png",
+        "8.png",
+        "9.png",
+        "10.png",
+        "11.png",
+        "12.png",
+        "13.png",
+        "14.png",
+        "15.png",
+        "16.png",
+        "17.png",
+        "18.png",
+        "19.png",
+        "20.png",
+        "21.png",
+        "22.png",
+        "23.png",
+        "24.png",
+        "25.png",
+        "26.png",
+        "27.png",
+      ];
+
+      /* Modal content (text) */
+      const CONTENT = [
+        {
+          title: "Racer at Dawn",
+          meta: "Milwaukee · c. 1914 · 1m read",
+          body: "Early morning practice on the board track. Oiled planks reduced friction but made rain treacherous. Mechanics tuned by ear, chasing an extra mph.",
+        },
+        {
+          title: "Factory Line",
+          meta: "Assembly · 1920s · archival",
+          body: "Hand-fit parts met new conveyors. Gauges and jigs brought repeatability long before CNC.",
+        },
+        {
+          title: "Sidecar Stories",
+          meta: "Touring · 1930s",
+          body: "Family trips meant a packed sidecar, spares under the seat, and a paper map wedged behind the windshield.",
+        },
+        {
+          title: "Flathead Notes",
+          meta: "Engineering · field notes",
+          body: "Logbooks recorded timing, jetting, and weather. Margins held sketches of chambers and odd failures.",
+        },
+        {
+          title: "Club Night",
+          meta: "Community · 1950s",
+          body: "Friday meets spilled into Saturday wrenching. Swapped cams, handmade pipes, and debates over pull vs top end.",
+        },
+        {
+          title: "Custom Chromes",
+          meta: "Craft · shop floor",
+          body: "Polish, buff, plate, repeat. Mirror finishes hid hours of prep; each shop had a recognizable signature.",
+        },
+      ];
+
+      /* ---- CSS Vars ---- */
+      document.documentElement.style.setProperty("--tile-w", TILE_W + "px");
+      document.documentElement.style.setProperty("--tile-h", TILE_H + "px");
+
+      /* ---- Elements ---- */
+      const vp = document.getElementById("viewport");
+      const layer = document.getElementById("layer");
+      const backdrop = document.getElementById("backdrop");
+      // const dlgTitle = document.getElementById("dlgTitle");
+      const dlgMeta = document.getElementById("dlgMeta");
+      // const dlgBody = document.getElementById("dlgBody");
+      // const closeBtn = document.getElementById("closeBtn");
+      const dlgTitle = document.getElementById("dlgTitle");
+      const dlgImage = document.getElementById("dlgImage");
+      const closeBtn = document.getElementById("closeBtn");
+
+      /* ---- Modal helpers ---- */
+      // function openModal(title, meta, body) {
+      //   dlgTitle.textContent = title;
+      //   dlgMeta.textContent = meta || "—";
+      //   dlgBody.textContent = body || "—";
+      //   backdrop.classList.add("open");
+      // }
+
+      function openModal(title, imageSrc) {
+        // dlgTitle.textContent = title || "Image Preview";
+        dlgImage.src = imageSrc || "";
+        backdrop.classList.add("open");
+      }
+      function closeModal() {
+        backdrop.classList.remove("open");
+      }
+      closeBtn.addEventListener("click", closeModal);
+      backdrop.addEventListener("click", (e) => {
+        const modal = e.currentTarget.querySelector(".modal");
+        if (!modal.contains(e.target)) closeModal();
+      });
+
+      /* ---- Preload thumbs (non-blocking) ---- */
+      (function preload() {
+        IMAGES.forEach((src) => {
+          const img = new Image();
+          img.decoding = "async";
+          img.src = src;
+        });
+      })();
+
+      /* ---- Build grid ---- */
+      const cols = Math.ceil(window.innerWidth / STEP_X) + EXTRA;
+      const rows = Math.ceil(window.innerHeight / STEP_Y) + EXTRA;
+
+      const tiles = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const el = document.createElement("div");
+          el.className = "tile ready";
+          layer.appendChild(el);
+          tiles.push({ el, r, c, wc: NaN, wr: NaN });
+        }
+      }
+
+      /* ---- Camera ---- */
+      const camera = { x: 0, y: 0, zoom: 1 };
+      let vx = 0,
+        vy = 0,
+        dragging = false,
+        lastX = 0,
+        lastY = 0;
+
+      /* Track press for robust click (open on pointerup if not dragged) */
+      let pressTile = null,
+        pressX = 0,
+        pressY = 0;
+
+      /* ---- Helpers ---- */
+      const wrap = (n, size) => ((n % size) + size) % size;
+      const DPR = window.devicePixelRatio || 1;
+      const mod = (n, m) => ((n % m) + m) % m;
+      function quantizeToDevicePixels(valueUnscaled, zoom) {
+        const scaled = valueUnscaled * zoom;
+        const snapped = Math.round(scaled * DPR) / DPR;
+        return snapped / zoom;
+      }
+      const STRIDE = 17;
+      function imageForCell(wc, wr) {
+        const idx = mod(wc + wr * STRIDE, IMAGES.length);
+        return IMAGES[idx];
+      }
+      function contentIndexForCell(wc, wr) {
+        return mod(wc + wr * STRIDE, CONTENT.length);
+      }
+
+      /* ---- Render ---- */
+      function render() {
+        const ox = wrap(-camera.x, STEP_X);
+        const oy = wrap(-camera.y, STEP_Y);
+
+        const col0 = Math.floor(camera.x / STEP_X);
+        const row0 = Math.floor(camera.y / STEP_Y);
+
+        let i = 0;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++, i++) {
+            const wc = c - 1 + col0;
+            const wr = r - 1 + row0;
+
+            if (tiles[i].wc !== wc || tiles[i].wr !== wr) {
+              tiles[i].wc = wc;
+              tiles[i].wr = wr;
+              tiles[i].el.style.setProperty(
+                "--img",
+                `url("${imageForCell(wc, wr)}")`,
+              );
+              // store world cell & content index directly on the element for fast lookup
+              tiles[i].el.dataset.wc = wc;
+              tiles[i].el.dataset.wr = wr;
+              tiles[i].el.dataset.idx = contentIndexForCell(wc, wr);
+            }
+
+            const x0 = c * STEP_X + ox - STEP_X;
+            const y0 = r * STEP_Y + oy - STEP_Y;
+            const x = quantizeToDevicePixels(x0, camera.zoom);
+            const y = quantizeToDevicePixels(y0, camera.zoom);
+            tiles[i].el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+          }
+        }
+
+        layer.style.transform = `scale(${camera.zoom})`;
+      }
+
+      /* ---- Tick ---- */
+      function tick() {
+        if (!dragging) {
+          vx = Math.max(Math.min(vx, MAX_V), -MAX_V);
+          vy = Math.max(Math.min(vy, MAX_V), -MAX_V);
+          camera.x += vx;
+          camera.y += vy;
+          vx *= FRICTION;
+          vy *= FRICTION;
+          if (Math.abs(vx) < 0.01) vx = 0;
+          if (Math.abs(vy) < 0.01) vy = 0;
+        }
+        render();
+        requestAnimationFrame(tick);
+      }
+      tick();
+
+      /* ---- Wheel ---- */
+      vp.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          if (e.ctrlKey) {
+            const preX = e.clientX / camera.zoom + camera.x;
+            const preY = e.clientY / camera.zoom + camera.y;
+            const s = Math.exp(-e.deltaY * 0.001);
+            const nz = Math.min(ZMAX, Math.max(ZMIN, camera.zoom * s));
+            camera.zoom = nz;
+            camera.x = preX - e.clientX / camera.zoom;
+            camera.y = preY - e.clientY / camera.zoom;
+          } else {
+            vx += e.deltaX * IMPULSE;
+            vy += e.deltaY * IMPULSE;
+          }
+        },
+        { passive: false },
+      );
+
+      /* ---- Drag & Tap-to-open (use pointerup instead of click) ---- */
+      vp.addEventListener("pointerdown", (e) => {
+        dragging = true;
+        vp.setPointerCapture(e.pointerId);
+        lastX = pressX = e.clientX;
+        lastY = pressY = e.clientY;
+        vx = vy = 0;
+
+        // remember which tile was pressed (event target is still the tile even though listener is on #viewport)
+        pressTile = e.target.closest(".tile");
+      });
+
+      vp.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        camera.x -= dx / camera.zoom;
+        camera.y -= dy / camera.zoom;
+        lastX = e.clientX;
+        lastY = e.clientY;
+      });
+
+      vp.addEventListener("pointerup", (e) => {
+        dragging = false;
+
+        // treat as a "click" if movement was tiny AND you started on a tile
+        const moved = Math.hypot(e.clientX - pressX, e.clientY - pressY);
+        if (pressTile && moved < 8) {
+          const wc = parseInt(pressTile.dataset.wc, 10);
+          const wr = parseInt(pressTile.dataset.wr, 10);
+          const idx = parseInt(pressTile.dataset.idx, 10);
+          const item = CONTENT[(isNaN(idx) ? 0 : idx) % CONTENT.length];
+
+          // openModal(
+          //   `${item.title} — cell (${wc}, ${wr})`,
+          //   item.meta || "—",
+          //   item.body || "—",
+          // );
+
+          const imageSrc = imageForCell(wc, wr);
+
+          openModal(`Image — cell (${wc}, ${wr})`, imageSrc);
+        }
+        pressTile = null;
+      });
+
+      vp.addEventListener("pointercancel", () => {
+        dragging = false;
+        pressTile = null;
+      });
+
+      /* ---- Resize ---- */
+      window.addEventListener("resize", () => location.reload());
+    </script>
+  </body>
+</html>
