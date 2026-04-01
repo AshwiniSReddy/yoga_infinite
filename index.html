@@ -14,29 +14,7 @@
         --radius: 8px;
       }
 
-      /* .image-modal {
-        width: min(92vw, 1000px);
-        background: #111;
-        color: #f2f2f2;
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
-        display: grid;
-        grid-template-rows: auto 1fr;
-      } */
-      /* .image-modal {
-        width: 96vw;
-        height: 94vh;
-        max-width: 1800px;
-        max-height: 94vh;
-        background: #111;
-        color: #f2f2f2;
-        border-radius: 16px;
-        overflow: hidden;
-        box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
-        display: grid;
-        grid-template-rows: auto 1fr;
-      } */
+     
 
       .modal.image-modal {
         width: 96vw;
@@ -192,17 +170,7 @@
   <body>
     <div id="viewport"><div id="layer"></div></div>
 
-    <!-- Custom modal (works everywhere) -->
-    <!-- <div id="backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" aria-describedby="dlgBody">
-  <div class="modal">
-    <header>
-      <h2 id="dlgTitle">Title</h2>
-      <button class="closeBtn" id="closeBtn" type="button" aria-label="Close">Close</button>
-    </header>
-    <div class="meta" id="dlgMeta">—</div>
-    <article id="dlgBody">—</article>
-  </div>
-</div> -->
+  
     <div
       id="backdrop"
       class="modal-backdrop"
@@ -324,13 +292,7 @@
       const dlgImage = document.getElementById("dlgImage");
       const closeBtn = document.getElementById("closeBtn");
 
-      /* ---- Modal helpers ---- */
-      // function openModal(title, meta, body) {
-      //   dlgTitle.textContent = title;
-      //   dlgMeta.textContent = meta || "—";
-      //   dlgBody.textContent = body || "—";
-      //   backdrop.classList.add("open");
-      // }
+   
 
       function openModal(title, imageSrc) {
         // dlgTitle.textContent = title || "Image Preview";
